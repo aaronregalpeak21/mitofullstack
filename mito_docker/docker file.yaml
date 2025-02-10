@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  mariadb:
+    image: mariadb:10.3
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mito
+      MYSQL_USER: frappe
+      MYSQL_PASSWORD: frappe
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  redis_cache:
+    image: redis:alpine
+    restart: always
+
+  redis_socketio:
+    image: redis:alpine
+    restart: always
+
+  redis_queue:
+    image: redis:alpine
+    restart: always
+
+  # Site Creator – creates the site and installs apps
+  site-creator:
+    image: frappe/erpnext-worker:latest
+    command: bench new-site mito.local
+    environment:
+      SITE_NAME: mito.local
+      DB_ROOT_USER: root
+      MYSQL_ROOT_PASSWORD: root
+      ADMIN_PASSWORD: admin
+      INSTALL_APPS: "lms,erpnext,hrms,lending,insights,charts,frappe_whatsapp,anything-llm,OCEANAI,FinRobot"
+    volumes:
+      - ./apps_custom:/home/frappe/frappe-bench/apps_custom
+    depends_on:
+      - mariadb
+      - redis_cache
+      - redis_socketio
+      - redis_queue
+    restart: "no"
+
+  frappe:
+    image: frappe/erpnext-nginx:latest
+    ports:
+      - "8000:80"
+    environment:
+      SITE_NAME: mito.local
+      DB_ROOT_USER: root
+      MYSQL_ROOT_PASSWORD: root
+      BACKEND: site-creator
+    depends_on:
+      - site-creator
+
+  worker:
+    image: frappe/erpnext-worker:latest
+    environment:
+      SITE_NAME: mito.local
+      MYSQL_ROOT_PASSWORD: root
+    depends_on:
+      - frappe
+
+  scheduler:
+    image: frappe/erpnext-worker:latest
+    command: bench schedule
+    environment:
+      SITE_NAME: mito.local
+      MYSQL_ROOT_PASSWORD: root
+    depends_on:
+      - frappe
+
+volumes:
+  mariadb_data:
